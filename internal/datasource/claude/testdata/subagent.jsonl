@@ -1,0 +1,1 @@
+{"type":"assistant","sessionId":"session-sub","timestamp":"2026-05-10T02:00:00.000Z","cwd":"/Users/example/work/repo","agentId":"agent-123","parentAgentId":"parent-456","message":{"id":"msg-sub","type":"message","role":"assistant","model":"claude-haiku-4.5","content":[],"usage":{"input_tokens":12,"output_tokens":8,"cache_read_input_tokens":4}}}

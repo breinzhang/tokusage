@@ -1,0 +1,2 @@
+{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-10T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-dup","type":"message","role":"assistant","model":"claude-sonnet-4.5","content":[],"usage":{"input_tokens":100,"output_tokens":20}}}
+{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-10T01:02:04.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-dup","type":"message","role":"assistant","model":"claude-sonnet-4.5","content":[],"usage":{"input_tokens":100,"output_tokens":20}}}
