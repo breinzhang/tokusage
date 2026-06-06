@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/breinzhang/tokusage/internal/humanfmt"
@@ -59,30 +60,62 @@ func tableRowColors(buckets []Bucket, enabled bool) []string {
 		return colors
 	}
 
-	minTokens := buckets[0].Tokens.TotalTokens()
-	maxTokens := minTokens
-	for _, bucket := range buckets[1:] {
-		total := bucket.Tokens.TotalTokens()
-		if total < minTokens {
-			minTokens = total
+	costs := make([]float64, len(buckets))
+	comparable := make([]bool, len(buckets))
+	comparableCount := 0
+	var minCost float64
+	var maxCost float64
+	for i, bucket := range buckets {
+		cost, ok := tableCostValue(bucket.EstimatedCost)
+		if !ok {
+			continue
 		}
-		if total > maxTokens {
-			maxTokens = total
+		costs[i] = cost
+		comparable[i] = true
+		if comparableCount == 0 {
+			minCost = cost
+			maxCost = cost
 		}
+		if cost < minCost {
+			minCost = cost
+		}
+		if cost > maxCost {
+			maxCost = cost
+		}
+		comparableCount++
 	}
-	if minTokens == maxTokens {
+	if comparableCount < 2 || minCost == maxCost {
 		return colors
 	}
 
-	for i, bucket := range buckets {
-		switch total := bucket.Tokens.TotalTokens(); total {
-		case minTokens:
+	for i, cost := range costs {
+		if !comparable[i] {
+			continue
+		}
+		switch cost {
+		case minCost:
 			colors[i] = tableLessColor
-		case maxTokens:
+		case maxCost:
 			colors[i] = tableMoreColor
 		}
 	}
 	return colors
+}
+
+func tableCostValue(value string) (float64, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "$") {
+		return 0, false
+	}
+	fields := strings.Fields(strings.TrimPrefix(value, "$"))
+	if len(fields) == 0 {
+		return 0, false
+	}
+	cost, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0, false
+	}
+	return cost, true
 }
 
 func colorizeTableRow(row string, color string) string {

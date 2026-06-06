@@ -111,36 +111,64 @@ func TestRenderTableAlignsRowsWithLongLabels(t *testing.T) {
 	}
 }
 
-func TestRenderTableColorsLeastAndMostUsageRows(t *testing.T) {
+func TestRenderTableColorsLeastAndMostCostRows(t *testing.T) {
 	report := Report{
 		LabelHeader:  "Model",
 		ColorEnabled: true,
 		Buckets: []Bucket{
 			{
-				Label:  "least",
-				Tokens: domain.TokenSummary{StandardInputTokens: 10},
+				Label:         "expensive-low-token",
+				Tokens:        domain.TokenSummary{StandardInputTokens: 10},
+				EstimatedCost: "$9.00",
 			},
 			{
-				Label:  "middle",
-				Tokens: domain.TokenSummary{StandardInputTokens: 20},
+				Label:         "middle",
+				Tokens:        domain.TokenSummary{StandardInputTokens: 20},
+				EstimatedCost: "$5.00",
 			},
 			{
-				Label:  "most",
-				Tokens: domain.TokenSummary{StandardInputTokens: 30},
+				Label:         "cheap-high-token",
+				Tokens:        domain.TokenSummary{StandardInputTokens: 30},
+				EstimatedCost: "$1.00",
 			},
 		},
 	}
 
 	table := RenderTable(report)
 
-	if !strings.Contains(table, "\x1b[38;5;95mleast") {
-		t.Fatalf("least usage row missing less color:\n%q", table)
+	if !strings.Contains(table, "\x1b[38;5;95mcheap-high-token") {
+		t.Fatalf("least cost row missing less color:\n%q", table)
 	}
-	if !strings.Contains(table, "\x1b[38;5;208mmost") {
-		t.Fatalf("most usage row missing more color:\n%q", table)
+	if !strings.Contains(table, "\x1b[38;5;208mexpensive-low-token") {
+		t.Fatalf("most cost row missing more color:\n%q", table)
 	}
 	if strings.Contains(table, "\x1b[38;5;95mmiddle") || strings.Contains(table, "\x1b[38;5;208mmiddle") {
 		t.Fatalf("middle row should not be colored:\n%q", table)
+	}
+}
+
+func TestRenderTableDoesNotColorEqualCostRows(t *testing.T) {
+	report := Report{
+		LabelHeader:  "Model",
+		ColorEnabled: true,
+		Buckets: []Bucket{
+			{
+				Label:         "low-token",
+				Tokens:        domain.TokenSummary{StandardInputTokens: 10},
+				EstimatedCost: "$1.00",
+			},
+			{
+				Label:         "high-token",
+				Tokens:        domain.TokenSummary{StandardInputTokens: 30},
+				EstimatedCost: "$1.00",
+			},
+		},
+	}
+
+	table := RenderTable(report)
+
+	if strings.Contains(table, "\x1b[") {
+		t.Fatalf("equal cost rows should not be colored:\n%q", table)
 	}
 }
 
