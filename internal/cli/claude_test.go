@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -22,6 +24,65 @@ func TestClaudeChartHelpIncludesChartFlags(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("help output missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestClaudeReportHelpIncludesPricingFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"claude", "report", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	text := out.String()
+	if !strings.Contains(text, "--pricing") {
+		t.Fatalf("help output missing pricing flag:\n%s", text)
+	}
+}
+
+func TestClaudeModelsCreatesAndUsesDefaultPricingConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "-Users-example-work-repo")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(`{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-10T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-1","type":"message","role":"assistant","model":"glm-5.1","content":[],"usage":{"input_tokens":1000000,"output_tokens":1000000}}}` + "\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "session-a.jsonl"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"claude", "models",
+		"--path", root,
+		"--cache", filepath.Join(t.TempDir(), "tokusage.db"),
+		"--from", "2026-05-01",
+		"--to", "2026-05-30",
+		"--timezone", "UTC",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	defaultPricingPath := filepath.Join(home, ".tokusage", "pricing.toml")
+	if _, err := os.Stat(defaultPricingPath); err != nil {
+		t.Fatalf("default pricing config was not created: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "$5.80") {
+		t.Fatalf("models output should use default GLM pricing:\n%s", text)
+	}
+	if strings.Contains(text, "$18.00") {
+		t.Fatalf("models output used built-in Sonnet fallback pricing:\n%s", text)
 	}
 }
 

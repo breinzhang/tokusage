@@ -30,7 +30,21 @@ Default report scope is the latest 7 days that have usage data. Explicit `--grou
 
 ## Pricing
 
-Costs are estimates. Built-in Anthropic model prices are included. Unknown or non-Anthropic models fall back to Anthropic Sonnet pricing.
+Costs are estimates. On first CLI use, tokusage creates `~/.tokusage/pricing.toml` with editable prices for common Anthropic, Kimi/Moonshot, GLM/Z.AI, DeepSeek, and MiniMax models. Unknown models fall back to Anthropic Sonnet pricing.
+
+Use `--pricing path/to/pricing.toml` to use a different pricing file. Configured prices are checked first, then built-in prices are used as fallback.
+
+```toml
+[[models]]
+pattern = "glm-5*"
+standard_input_per_mtok = "1.00"
+cache_write_5m_per_mtok = "1.00"
+cache_write_1h_per_mtok = "1.00"
+cache_read_per_mtok = "0.10"
+output_per_mtok = "2.00"
+```
+
+Prices are USD per 1M tokens. `pattern` supports Go filepath-style matching such as `glm-5*`.
 
 ## Claude Code transcripts
 

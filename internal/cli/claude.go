@@ -9,6 +9,7 @@ import (
 
 	"github.com/breinzhang/tokusage/internal/app"
 	"github.com/breinzhang/tokusage/internal/platform"
+	"github.com/breinzhang/tokusage/internal/pricing"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +38,7 @@ func newClaudeProjectsCommand() *cobra.Command {
 }
 
 func newClaudeChartCommand() *cobra.Command {
-	var from, to, timezoneName, cachePath string
+	var from, to, timezoneName, cachePath, pricingPath string
 	var groupBy, metric, splitBy, colorMode string
 	var paths []string
 	var excludeSubagents, ascii bool
@@ -47,8 +48,11 @@ func newClaudeChartCommand() *cobra.Command {
 		Use:   "chart",
 		Short: "Show Claude Code usage chart",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			common, err := claudeOptionsWithGroupByFlag(paths, cachePath, from, to, timezoneName, "table", groupBy, cmd.Flags().Changed("group-by"), excludeSubagents)
+			common, err := claudeOptionsWithPricingAndGroupByFlag(paths, cachePath, pricingPath, from, to, timezoneName, "table", groupBy, cmd.Flags().Changed("group-by"), excludeSubagents)
 			if err != nil {
+				return err
+			}
+			if common, err = resolvePricingConfig(common, pricingPath); err != nil {
 				return err
 			}
 			out, err := app.RunClaudeChart(cmd.Context(), app.ChartOptions{
@@ -80,6 +84,7 @@ func newClaudeChartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&colorMode, "color", "auto", "color mode: auto, never, always")
 	cmd.Flags().StringArrayVar(&paths, "path", nil, "Claude projects directory")
 	cmd.Flags().StringVar(&cachePath, "cache", "", "cache database path")
+	cmd.Flags().StringVar(&pricingPath, "pricing", "", "pricing TOML path")
 	cmd.Flags().BoolVar(&excludeSubagents, "exclude-subagents", false, "exclude subagent usage")
 	return cmd
 }
@@ -87,7 +92,7 @@ func newClaudeChartCommand() *cobra.Command {
 type claudeRunner func(context.Context, app.Options) (string, error)
 
 func newClaudeReportLikeCommand(use string, short string, defaultGroupBy string, runner claudeRunner) *cobra.Command {
-	var from, to, timezoneName, format, groupBy, cachePath string
+	var from, to, timezoneName, format, groupBy, cachePath, pricingPath string
 	var paths []string
 	var excludeSubagents bool
 
@@ -95,8 +100,11 @@ func newClaudeReportLikeCommand(use string, short string, defaultGroupBy string,
 		Use:   use,
 		Short: short,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts, err := claudeOptionsWithGroupByFlag(paths, cachePath, from, to, timezoneName, format, groupBy, cmd.Flags().Changed("group-by"), excludeSubagents)
+			opts, err := claudeOptionsWithPricingAndGroupByFlag(paths, cachePath, pricingPath, from, to, timezoneName, format, groupBy, cmd.Flags().Changed("group-by"), excludeSubagents)
 			if err != nil {
+				return err
+			}
+			if opts, err = resolvePricingConfig(opts, pricingPath); err != nil {
 				return err
 			}
 			opts.ColorEnabled = resolveColorEnabled("auto", cmd.OutOrStdout())
@@ -115,6 +123,7 @@ func newClaudeReportLikeCommand(use string, short string, defaultGroupBy string,
 	cmd.Flags().StringVar(&groupBy, "group-by", defaultGroupBy, "grouping: day, week, month, year, range")
 	cmd.Flags().StringArrayVar(&paths, "path", nil, "Claude projects directory")
 	cmd.Flags().StringVar(&cachePath, "cache", "", "cache database path")
+	cmd.Flags().StringVar(&pricingPath, "pricing", "", "pricing TOML path")
 	cmd.Flags().BoolVar(&excludeSubagents, "exclude-subagents", false, "exclude subagent usage")
 	return cmd
 }
@@ -124,6 +133,10 @@ func claudeOptions(paths []string, cachePath string, from string, to string, tim
 }
 
 func claudeOptionsWithGroupByFlag(paths []string, cachePath string, from string, to string, timezoneName string, format string, groupBy string, groupByFlagChanged bool, excludeSubagents bool) (app.Options, error) {
+	return claudeOptionsWithPricingAndGroupByFlag(paths, cachePath, "", from, to, timezoneName, format, groupBy, groupByFlagChanged, excludeSubagents)
+}
+
+func claudeOptionsWithPricingAndGroupByFlag(paths []string, cachePath string, pricingPath string, from string, to string, timezoneName string, format string, groupBy string, groupByFlagChanged bool, excludeSubagents bool) (app.Options, error) {
 	if len(paths) == 0 {
 		paths = platform.DefaultClaudeProjectsDirs()
 	}
@@ -160,7 +173,24 @@ func claudeOptionsWithGroupByFlag(paths []string, cachePath string, from string,
 		ExcludeSubagents: excludeSubagents,
 		RecentDataDays:   recentDataDays,
 		RecentDataWeeks:  recentDataWeeks,
+		PricingPath:      pricingPath,
 	}, nil
+}
+
+func resolvePricingConfig(opts app.Options, explicitPath string) (app.Options, error) {
+	if explicitPath != "" {
+		opts.PricingPath = explicitPath
+		return opts, nil
+	}
+	path, err := platform.DefaultPricingConfigPath()
+	if err != nil {
+		return app.Options{}, err
+	}
+	if err := pricing.EnsureDefaultConfig(path); err != nil {
+		return app.Options{}, err
+	}
+	opts.PricingPath = path
+	return opts, nil
 }
 
 func resolveColorEnabled(colorMode string, writer io.Writer) bool {

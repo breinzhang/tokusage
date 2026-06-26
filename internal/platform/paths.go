@@ -23,3 +23,11 @@ func DefaultCacheDBPath() (string, error) {
 	}
 	return filepath.Join(cacheDir, "tokusage", "tokusage.db"), nil
 }
+
+func DefaultPricingConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".tokusage", "pricing.toml"), nil
+}

@@ -53,3 +53,51 @@ output_per_mtok = "5.00"
 		t.Fatal("LoadConfig error = nil, want error")
 	}
 }
+
+func TestEnsureDefaultConfigWritesLoadableCommonModelPrices(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".tokusage", "pricing.toml")
+
+	if err := EnsureDefaultConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	prices, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := NewStaticProvider(prices)
+	for _, model := range []string{"claude-sonnet-4.5", "glm-5.1", "kimi-k2.7-code", "deepseek-chat", "minimax-m3"} {
+		if _, ok := provider.PriceFor(model); !ok {
+			t.Fatalf("default config missing price for %s", model)
+		}
+	}
+
+	glm, ok := provider.PriceFor("glm-5.1")
+	if !ok {
+		t.Fatal("glm-5.1 price not found")
+	}
+	if glm.StandardInputPerMTok.StringFixed(2) != "1.40" || glm.OutputPerMTok.StringFixed(2) != "4.40" {
+		t.Fatalf("glm price = input %s output %s, want CC-Link defaults", glm.StandardInputPerMTok, glm.OutputPerMTok)
+	}
+}
+
+func TestEnsureDefaultConfigDoesNotOverwriteExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".tokusage", "pricing.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("# custom pricing\n")
+	if err := os.WriteFile(path, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := EnsureDefaultConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("existing config was overwritten:\n%s", got)
+	}
+}

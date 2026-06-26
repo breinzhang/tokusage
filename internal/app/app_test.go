@@ -101,6 +101,50 @@ func TestRunClaudeModelsSummarizesByModel(t *testing.T) {
 	}
 }
 
+func TestRunClaudeModelsUsesPricingConfig(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "-Users-example-work-repo")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(`{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-10T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-1","type":"message","role":"assistant","model":"glm-5.1","content":[],"usage":{"input_tokens":1000000,"output_tokens":1000000}}}` + "\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "session-a.jsonl"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pricingPath := filepath.Join(t.TempDir(), "pricing.toml")
+	pricingConfig := []byte(`
+[[models]]
+pattern = "glm-5*"
+standard_input_per_mtok = "1.00"
+cache_write_5m_per_mtok = "1.00"
+cache_write_1h_per_mtok = "1.00"
+cache_read_per_mtok = "0.10"
+output_per_mtok = "2.00"
+`)
+	if err := os.WriteFile(pricingPath, pricingConfig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := RunClaudeModels(context.Background(), Options{
+		Paths:       []string{root},
+		CachePath:   filepath.Join(t.TempDir(), "tokusage.db"),
+		From:        "2026-05-01",
+		To:          "2026-05-30",
+		Format:      "table",
+		Timezone:    "UTC",
+		PricingPath: pricingPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "$3.00") {
+		t.Fatalf("models output should use configured GLM pricing:\n%s", out)
+	}
+	if strings.Contains(out, "$18.00") {
+		t.Fatalf("models output used built-in Sonnet fallback pricing:\n%s", out)
+	}
+}
+
 func TestRunClaudeProjectsSummarizesByProjectName(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "-Users-example-work-repo")
@@ -260,6 +304,57 @@ func TestRunClaudeChartOnFixtureDirectory(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("chart output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestRunClaudeChartUsesPricingConfig(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "-Users-example-work-repo")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(`{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-10T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-1","type":"message","role":"assistant","model":"glm-5.1","content":[],"usage":{"input_tokens":1000000,"output_tokens":1000000}}}` + "\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "session-a.jsonl"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pricingPath := filepath.Join(t.TempDir(), "pricing.toml")
+	pricingConfig := []byte(`
+[[models]]
+pattern = "glm-5*"
+standard_input_per_mtok = "1.00"
+cache_write_5m_per_mtok = "1.00"
+cache_write_1h_per_mtok = "1.00"
+cache_read_per_mtok = "0.10"
+output_per_mtok = "2.00"
+`)
+	if err := os.WriteFile(pricingPath, pricingConfig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := RunClaudeChart(context.Background(), ChartOptions{
+		Options: Options{
+			Paths:       []string{root},
+			CachePath:   filepath.Join(t.TempDir(), "tokusage.db"),
+			From:        "2026-05-01",
+			To:          "2026-05-30",
+			GroupBy:     "day",
+			Timezone:    "UTC",
+			PricingPath: pricingPath,
+		},
+		Metric:  "cost",
+		SplitBy: "none",
+		Top:     8,
+		Width:   10,
+		Color:   "never",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "$3.00") {
+		t.Fatalf("chart output should use configured GLM pricing:\n%s", out)
+	}
+	if strings.Contains(out, "$18.00") {
+		t.Fatalf("chart output used built-in Sonnet fallback pricing:\n%s", out)
 	}
 }
 

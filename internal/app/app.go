@@ -31,6 +31,7 @@ type Options struct {
 	ColorEnabled     bool
 	RecentDataDays   int
 	RecentDataWeeks  int
+	PricingPath      string
 }
 
 type ChartOptions struct {
@@ -101,7 +102,10 @@ func RunClaudeChart(ctx context.Context, opts ChartOptions) (string, error) {
 	rollups, opts.Options = applyRecentDataWindow(rollups, opts.Options)
 	chartOpts.From = opts.From
 	chartOpts.To = opts.To
-	provider := pricing.BuiltinAnthropicProvider()
+	provider, err := loadPricingProvider(opts.Options)
+	if err != nil {
+		return "", err
+	}
 	view, err := chart.Build(rollups, chartOpts, provider)
 	if err != nil {
 		return "", err
@@ -282,7 +286,10 @@ func optionsWithDateRange(opts Options, rollups []cache.DailyRollup) Options {
 }
 
 func renderRollupReport(opts Options, rollups []cache.DailyRollup, labelHeader string, labelFor func(cache.DailyRollup) string) (string, error) {
-	provider := pricing.BuiltinAnthropicProvider()
+	provider, err := loadPricingProvider(opts)
+	if err != nil {
+		return "", err
+	}
 	calc := pricing.Calculator{Provider: provider}
 	report := output.Report{
 		Agent:        "claude-code",
@@ -333,6 +340,19 @@ func renderRollupReport(opts Options, rollups []cache.DailyRollup, labelHeader s
 		return string(data) + "\n", nil
 	}
 	return output.RenderTable(report), nil
+}
+
+func loadPricingProvider(opts Options) (pricing.Provider, error) {
+	builtin := pricing.BuiltinAnthropicProvider()
+	if opts.PricingPath == "" {
+		return builtin, nil
+	}
+	configPrices, err := pricing.LoadConfig(opts.PricingPath)
+	if err != nil {
+		return nil, fmt.Errorf("load pricing config: %w", err)
+	}
+	configured := pricing.NewStaticProvider(configPrices)
+	return pricing.NewOverlayProvider(configured, builtin), nil
 }
 
 type bucketTotals struct {

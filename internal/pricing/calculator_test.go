@@ -46,6 +46,22 @@ func TestCalculateUnknownModelIsPartial(t *testing.T) {
 	}
 }
 
+func TestStaticProviderMatchesPatternsCaseInsensitively(t *testing.T) {
+	provider := NewStaticProvider([]ModelPrice{{
+		Pattern:              "glm-5*",
+		StandardInputPerMTok: mustDecimal("1.00"),
+		OutputPerMTok:        mustDecimal("2.00"),
+	}})
+
+	price, ok := provider.PriceFor("GLM-5.1")
+	if !ok {
+		t.Fatal("GLM-5.1 price not found")
+	}
+	if price.StandardInputPerMTok.StringFixed(2) != "1.00" || price.OutputPerMTok.StringFixed(2) != "2.00" {
+		t.Fatalf("matched price = input %s output %s", price.StandardInputPerMTok, price.OutputPerMTok)
+	}
+}
+
 func TestBuiltinAnthropicProviderUsesCurrentClaudePricing(t *testing.T) {
 	provider := BuiltinAnthropicProvider()
 
