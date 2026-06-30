@@ -8,14 +8,29 @@ import (
 	"github.com/breinzhang/tokusage/internal/domain"
 )
 
+type FileMetadata struct {
+	Size    int64
+	MTimeNS int64
+}
+
+type FileState struct {
+	Size    int64
+	MTimeNS int64
+	Status  string
+}
+
 func ReplaceFileEvents(ctx context.Context, db *sql.DB, agent string, pathNorm string, events []domain.UsageEvent) error {
+	return ReplaceFileEventsWithMetadata(ctx, db, agent, pathNorm, FileMetadata{}, events)
+}
+
+func ReplaceFileEventsWithMetadata(ctx context.Context, db *sql.DB, agent string, pathNorm string, metadata FileMetadata, events []domain.UsageEvent) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	fileID, err := upsertFile(ctx, tx, agent, pathNorm)
+	fileID, err := upsertFile(ctx, tx, agent, pathNorm, metadata)
 	if err != nil {
 		return err
 	}
@@ -33,11 +48,75 @@ func ReplaceFileEvents(ctx context.Context, db *sql.DB, agent string, pathNorm s
 	return tx.Commit()
 }
 
-func upsertFile(ctx context.Context, tx *sql.Tx, agent string, pathNorm string) (int64, error) {
+func LoadFileStates(ctx context.Context, db *sql.DB, agent string) (map[string]FileState, error) {
+	rows, err := db.QueryContext(ctx, `SELECT path_norm, size, mtime_ns, status FROM files WHERE agent = ?`, agent)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	states := map[string]FileState{}
+	for rows.Next() {
+		var pathNorm string
+		var state FileState
+		if err := rows.Scan(&pathNorm, &state.Size, &state.MTimeNS, &state.Status); err != nil {
+			return nil, err
+		}
+		states[pathNorm] = state
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return states, nil
+}
+
+func PruneMissingFiles(ctx context.Context, db *sql.DB, agent string, keep map[string]bool) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `SELECT id, path_norm FROM files WHERE agent = ?`, agent)
+	if err != nil {
+		return err
+	}
+	var deleteIDs []int64
+	for rows.Next() {
+		var id int64
+		var pathNorm string
+		if err := rows.Scan(&id, &pathNorm); err != nil {
+			rows.Close()
+			return err
+		}
+		if !keep[pathNorm] {
+			deleteIDs = append(deleteIDs, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, id := range deleteIDs {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE agent = ? AND file_id = ?`, agent, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM files WHERE agent = ? AND id = ?`, agent, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func upsertFile(ctx context.Context, tx *sql.Tx, agent string, pathNorm string, metadata FileMetadata) (int64, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO files (agent, path_raw, path_norm, size, mtime_ns, content_hash, parsed_at, status, error)
-VALUES (?, ?, ?, 0, 0, NULL, ?, 'parsed', '')
+VALUES (?, ?, ?, ?, ?, NULL, ?, 'parsed', '')
 ON CONFLICT(agent, path_norm) DO UPDATE SET
     path_raw = excluded.path_raw,
     size = excluded.size,
@@ -51,7 +130,7 @@ ON CONFLICT(agent, path_norm) DO UPDATE SET
 		return 0, err
 	}
 	defer stmt.Close()
-	if _, err := stmt.ExecContext(ctx, agent, pathNorm, pathNorm, now); err != nil {
+	if _, err := stmt.ExecContext(ctx, agent, pathNorm, pathNorm, metadata.Size, metadata.MTimeNS, now); err != nil {
 		return 0, err
 	}
 

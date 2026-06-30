@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/breinzhang/tokusage/internal/cache"
 )
@@ -38,6 +39,98 @@ func TestRunReportOnFixtureDirectory(t *testing.T) {
 	}
 	if !strings.Contains(out, "190") {
 		t.Fatalf("output missing total token count 190:\n%s", out)
+	}
+}
+
+func TestRunClaudeReportReusesUnchangedCachedFile(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "-Users-example-work-repo")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionPath := filepath.Join(projectDir, "session-a.jsonl")
+	content := []byte(`{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-10T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-1","type":"message","role":"assistant","model":"claude-sonnet-4.5","content":[],"usage":{"input_tokens":100,"output_tokens":20}}}` + "\n")
+	if err := os.WriteFile(sessionPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixedTime := time.Unix(1893456000, 123456789)
+	if err := os.Chtimes(sessionPath, fixedTime, fixedTime); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(sessionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cachePath := filepath.Join(t.TempDir(), "tokusage.db")
+	opts := Options{
+		Paths:     []string{root},
+		CachePath: cachePath,
+		From:      "2026-05-01",
+		To:        "2026-05-30",
+		Format:    "table",
+		GroupBy:   "day",
+		Timezone:  "UTC",
+	}
+
+	if _, err := RunClaudeReport(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	corruptSameSize := []byte(strings.Repeat("x", len(content)))
+	if err := os.WriteFile(sessionPath, corruptSameSize, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(sessionPath, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := RunClaudeReport(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "2026-05-10") || !strings.Contains(out, "120") {
+		t.Fatalf("unchanged file should be served from cached events:\n%s", out)
+	}
+}
+
+func TestRunClaudeReportPrunesDeletedFilesFromCache(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "-Users-example-work-repo")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	firstPath := filepath.Join(projectDir, "session-a.jsonl")
+	firstContent := []byte(`{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-10T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-1","type":"message","role":"assistant","model":"claude-sonnet-4.5","content":[],"usage":{"input_tokens":100,"output_tokens":20}}}` + "\n")
+	if err := os.WriteFile(firstPath, firstContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secondPath := filepath.Join(projectDir, "session-b.jsonl")
+	secondContent := []byte(`{"type":"assistant","sessionId":"session-b","timestamp":"2026-05-10T02:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-2","type":"message","role":"assistant","model":"claude-sonnet-4.5","content":[],"usage":{"input_tokens":300,"output_tokens":40}}}` + "\n")
+	if err := os.WriteFile(secondPath, secondContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{
+		Paths:     []string{root},
+		CachePath: filepath.Join(t.TempDir(), "tokusage.db"),
+		From:      "2026-05-01",
+		To:        "2026-05-30",
+		Format:    "table",
+		GroupBy:   "day",
+		Timezone:  "UTC",
+	}
+
+	if _, err := RunClaudeReport(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(secondPath); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := RunClaudeReport(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "120") || strings.Contains(out, "460") {
+		t.Fatalf("deleted transcript should be removed from cached totals:\n%s", out)
 	}
 }
 

@@ -165,20 +165,37 @@ func loadClaudeRollups(ctx context.Context, opts Options) ([]cache.DailyRollup, 
 		return nil, err
 	}
 
+	fileStates, err := cache.LoadFileStates(ctx, db, "claude-code")
+	if err != nil {
+		return nil, err
+	}
+	seenFiles := map[string]bool{}
 	for _, root := range opts.Paths {
 		files, err := claudedata.DiscoverJSONLFiles(root)
 		if err != nil {
 			return nil, err
 		}
 		for _, file := range files {
+			pathNorm := platform.NormalizePathForStorage(file)
+			seenFiles[pathNorm] = true
+			metadata, err := fileMetadata(file)
+			if err != nil {
+				return nil, err
+			}
+			if fileStateMatches(fileStates[pathNorm], metadata) {
+				continue
+			}
 			events, _, err := claudedata.ParseJSONLFile(file)
 			if err != nil {
 				return nil, err
 			}
-			if err := cache.ReplaceFileEvents(ctx, db, "claude-code", platform.NormalizePathForStorage(file), events); err != nil {
+			if err := cache.ReplaceFileEventsWithMetadata(ctx, db, "claude-code", pathNorm, metadata, events); err != nil {
 				return nil, err
 			}
 		}
+	}
+	if err := cache.PruneMissingFiles(ctx, db, "claude-code", seenFiles); err != nil {
+		return nil, err
 	}
 
 	loc, err := time.LoadLocation(opts.Timezone)
@@ -194,6 +211,21 @@ func loadClaudeRollups(ctx context.Context, opts Options) ([]cache.DailyRollup, 
 		Timezone:         opts.Timezone,
 		ExcludeSubagents: opts.ExcludeSubagents,
 	})
+}
+
+func fileMetadata(path string) (cache.FileMetadata, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return cache.FileMetadata{}, err
+	}
+	return cache.FileMetadata{
+		Size:    info.Size(),
+		MTimeNS: info.ModTime().UnixNano(),
+	}, nil
+}
+
+func fileStateMatches(state cache.FileState, metadata cache.FileMetadata) bool {
+	return state.Status == "parsed" && state.Size == metadata.Size && state.MTimeNS == metadata.MTimeNS
 }
 
 func applyRecentDataWindow(rollups []cache.DailyRollup, opts Options) ([]cache.DailyRollup, Options) {
