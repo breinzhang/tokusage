@@ -4,7 +4,7 @@ Local CLI for estimating Claude Code token usage from transcript JSONL files.
 
 ## Status
 
-Current implementation supports Claude Code CLI reports and terminal charts. TUI, query-result caching, and multi-agent support are not part of this phase.
+Current implementation supports Claude Code CLI reports, terminal charts, and contribution-style heatmaps. TUI, query-result caching, and multi-agent support are not part of this phase.
 
 ## Usage
 
@@ -17,6 +17,7 @@ tokusage claude chart --group-by day --metric cost
 tokusage claude chart --group-by month --metric cost --split-by model
 tokusage claude chart --group-by month --metric cost --split-by project
 tokusage claude chart --group-by year --metric cost
+tokusage claude heatmap
 tokusage cache status
 tokusage cache rebuild
 tokusage cache clear
@@ -27,6 +28,8 @@ Default report scope is the latest 7 days that have usage data. Explicit `--grou
 ## Charts
 
 `tokusage claude chart` renders terminal bar charts and splits by model by default. Use `--metric tokens` for token totals, `--metric cost` for estimated cost, `--split-by none` for plain bars, and `--split-by project` for project stacks. Use `--ascii` or `--color never` for log-friendly output.
+
+`tokusage claude heatmap` renders a GitHub contributions-style daily usage grid. By default it shows the last year ending at the latest usage date; use `--from` and `--to` for an explicit range.
 
 ## Pricing
 

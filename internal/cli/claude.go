@@ -22,6 +22,7 @@ func newClaudeCommand() *cobra.Command {
 	cmd.AddCommand(newClaudeModelsCommand())
 	cmd.AddCommand(newClaudeProjectsCommand())
 	cmd.AddCommand(newClaudeChartCommand())
+	cmd.AddCommand(newClaudeHeatmapCommand())
 	return cmd
 }
 
@@ -85,6 +86,43 @@ func newClaudeChartCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&paths, "path", nil, "Claude projects directory")
 	cmd.Flags().StringVar(&cachePath, "cache", "", "cache database path")
 	cmd.Flags().StringVar(&pricingPath, "pricing", "", "pricing TOML path")
+	cmd.Flags().BoolVar(&excludeSubagents, "exclude-subagents", false, "exclude subagent usage")
+	return cmd
+}
+
+func newClaudeHeatmapCommand() *cobra.Command {
+	var from, to, timezoneName, cachePath, colorMode string
+	var paths []string
+	var excludeSubagents bool
+
+	cmd := &cobra.Command{
+		Use:   "heatmap",
+		Short: "Show Claude Code usage contribution heatmap",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			common, err := claudeOptionsWithGroupByFlag(paths, cachePath, from, to, timezoneName, "table", "day", false, excludeSubagents)
+			if err != nil {
+				return err
+			}
+			common.RecentDataDays = 0
+			common.RecentDataWeeks = 0
+			out, err := app.RunClaudeHeatmap(cmd.Context(), app.HeatmapOptions{
+				Options:      common,
+				Color:        colorMode,
+				ColorEnabled: resolveColorEnabled(colorMode, cmd.OutOrStdout()),
+			})
+			if err != nil {
+				return err
+			}
+			cmd.Print(out)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&from, "from", "", "start date in YYYY-MM-DD")
+	cmd.Flags().StringVar(&to, "to", "", "end date in YYYY-MM-DD")
+	cmd.Flags().StringVar(&timezoneName, "timezone", "", "IANA timezone")
+	cmd.Flags().StringVar(&colorMode, "color", "auto", "color mode: auto, never, always")
+	cmd.Flags().StringArrayVar(&paths, "path", nil, "Claude projects directory")
+	cmd.Flags().StringVar(&cachePath, "cache", "", "cache database path")
 	cmd.Flags().BoolVar(&excludeSubagents, "exclude-subagents", false, "exclude subagent usage")
 	return cmd
 }

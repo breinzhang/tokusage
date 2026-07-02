@@ -27,6 +27,74 @@ func TestClaudeChartHelpIncludesChartFlags(t *testing.T) {
 	}
 }
 
+func TestClaudeHeatmapHelpIncludesHeatmapFlags(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"claude", "heatmap", "--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	text := out.String()
+	for _, want := range []string{"--from", "--to", "--timezone", "--color", "--exclude-subagents"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("help output missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestClaudeHeatmapCommandRendersContributionGrid(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "-Users-example-work-repo")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(
+		`{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-04T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-1","type":"message","role":"assistant","model":"claude-sonnet-4.5","content":[],"usage":{"input_tokens":100,"output_tokens":20}}}` + "\n" +
+			`{"type":"assistant","sessionId":"session-a","timestamp":"2026-05-08T01:02:03.000Z","cwd":"/Users/example/work/repo","message":{"id":"msg-2","type":"message","role":"assistant","model":"claude-sonnet-4.5","content":[],"usage":{"input_tokens":400,"output_tokens":100}}}` + "\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "session-a.jsonl"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"claude", "heatmap",
+		"--path", root,
+		"--cache", filepath.Join(t.TempDir(), "tokusage.db"),
+		"--from", "2026-05-01",
+		"--to", "2026-05-14",
+		"--timezone", "UTC",
+		"--color", "always",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	text := out.String()
+	for _, want := range []string{
+		"2 active days from 2026-05-01 to 2026-05-14",
+		"May",
+		"Mon",
+		"Wed",
+		"Fri",
+		"Less",
+		"More",
+		"\x1b[38;2;50;52;58m",
+		"\x1b[38;2;232;126;67m",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("heatmap output missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestClaudeReportHelpIncludesPricingFlag(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer

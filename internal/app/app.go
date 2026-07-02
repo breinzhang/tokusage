@@ -45,6 +45,12 @@ type ChartOptions struct {
 	ColorEnabled bool
 }
 
+type HeatmapOptions struct {
+	Options
+	Color        string
+	ColorEnabled bool
+}
+
 func RunClaudeReport(ctx context.Context, opts Options) (string, error) {
 	rollups, err := loadClaudeRollups(ctx, opts)
 	if err != nil {
@@ -111,6 +117,28 @@ func RunClaudeChart(ctx context.Context, opts ChartOptions) (string, error) {
 		return "", err
 	}
 	return chart.Render(view, chartOpts), nil
+}
+
+func RunClaudeHeatmap(ctx context.Context, opts HeatmapOptions) (string, error) {
+	heatmapOpts := chart.HeatmapOptions{
+		From:         opts.From,
+		To:           opts.To,
+		Color:        chart.ColorMode(opts.Color),
+		ColorEnabled: opts.ColorEnabled,
+	}
+	if err := heatmapOpts.Validate(); err != nil {
+		return "", err
+	}
+
+	rollups, err := loadClaudeRollups(ctx, opts.Options)
+	if err != nil {
+		return "", err
+	}
+	view, err := chart.BuildHeatmap(rollups, heatmapOpts)
+	if err != nil {
+		return "", err
+	}
+	return chart.RenderHeatmap(view, heatmapOpts), nil
 }
 
 type CacheStatus struct {
